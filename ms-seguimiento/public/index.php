@@ -63,6 +63,6 @@ $app->add(function (ServerRequestInterface $request, $handler) {
 });
 
 $routes = require __DIR__ . '/../app/Routes/routes.php';
-$routes($app);
+$routes($app);  
 
 $app->run();
