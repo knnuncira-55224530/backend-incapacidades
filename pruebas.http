@@ -1,0 +1,34 @@
+### ============================================
+### PRUEBAS DEL MICROSERVICIO ms-auth
+### ============================================
+
+### 1. LOGIN con usuario
+POST http://localhost:8001/login
+Content-Type: application/json
+
+{
+  "user": "admin",
+  "password": "admin123"
+}
+
+### 2. LOGIN con correo
+POST http://localhost:8001/login
+Content-Type: application/json
+
+{
+  "user": "admin@empresa.com",
+  "password": "admin123"
+}
+
+### 3. LOGOUT (copia el token que te devolvió el login)
+POST http://localhost:8001/logout
+Content-Type: application/json
+
+{
+  "token": "45c8991c7078eb0a07f658de14239b6a8a159a2c65c388174b331f66ba03799c"
+
+}
+
+### 4. VALIDAR SESIÓN (copia el token en el header)
+GET http://localhost:8001/validate-session
+Authorization: Bearer 45c8991c7078eb0a07f658de14239b6a8a159a2c65c388174b331f66ba03799c
