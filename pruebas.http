@@ -1,34 +1,8 @@
-### ============================================
-### PRUEBAS DEL MICROSERVICIO ms-auth
-### ============================================
+### Listar solo activos
+GET http://localhost:8002/empleados?estado=activo
 
-### 1. LOGIN con usuario
-POST http://localhost:8001/login
-Content-Type: application/json
+### Buscar por área
+GET http://localhost:8002/empleados?area=Sistemas
 
-{
-  "user": "admin",
-  "password": "admin123"
-}
-
-### 2. LOGIN con correo
-POST http://localhost:8001/login
-Content-Type: application/json
-
-{
-  "user": "admin@empresa.com",
-  "password": "admin123"
-}
-
-### 3. LOGOUT (copia el token que te devolvió el login)
-POST http://localhost:8001/logout
-Content-Type: application/json
-
-{
-  "token": "45c8991c7078eb0a07f658de14239b6a8a159a2c65c388174b331f66ba03799c"
-
-}
-
-### 4. VALIDAR SESIÓN (copia el token en el header)
-GET http://localhost:8001/validate-session
-Authorization: Bearer 45c8991c7078eb0a07f658de14239b6a8a159a2c65c388174b331f66ba03799c
+### Buscar por documento
+GET http://localhost:8002/empleados?documento=123456
