@@ -14,143 +14,148 @@ class EmpleadoController
         return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 
+    private function body(Request $request): array
+    {
+        $parsed = $request->getParsedBody();
+        return is_array($parsed) ? $parsed : [];
+    }
+
     public function index(Request $request, Response $response): Response
     {
-        $query = Empleado::query();
+        $q = Empleado::query();
+        $p = $request->getQueryParams();
 
-        $params = $request->getQueryParams();
-
-        if (!empty($params['documento'])) {
-            $query->where('documento', $params['documento']);
-        }
-
-        if (!empty($params['area'])) {
-            $query->where('area', $params['area']);
-        }
-
-        if (!empty($params['estado'])) {
-            $query->where('estado', $params['estado']);
-        }
-
-        $empleados = $query->orderBy('id', 'desc')->get();
+        if (!empty($p['documento'])) $q->where('documento', 'like', '%' . $p['documento'] . '%');
+        if (!empty($p['area'])) $q->where('area', 'like', '%' . $p['area'] . '%');
+        if (!empty($p['estado'])) $q->where('estado', $p['estado']);
 
         return $this->json($response, [
             'success' => true,
-            'data' => $empleados
+            'data' => $q->orderBy('id', 'desc')->get()
         ]);
+    }
+
+    public function show(Request $request, Response $response, array $args): Response
+    {
+        $item = Empleado::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Empleado no encontrado'], 404);
+
+        return $this->json($response, ['success' => true, 'data' => $item]);
     }
 
     public function store(Request $request, Response $response): Response
     {
-        $body = (array) $request->getParsedBody();
+        $body = $this->body($request);
 
-        $required = ['nombres', 'apellidos', 'documento', 'correo', 'telefono', 'cargo', 'area', 'fecha_ingreso'];
-        foreach ($required as $campo) {
-            if (empty($body[$campo])) {
-                return $this->json($response, [
-                    'success' => false,
-                    'message' => "El campo {$campo} es obligatorio"
-                ], 400);
+        foreach (['nombres','apellidos','documento','correo','telefono','cargo','area','fecha_ingreso'] as $f) {
+            if (!isset($body[$f]) || trim((string)$body[$f]) === '') {
+                return $this->json($response, ['success' => false, 'message' => "El campo {$f} es obligatorio"], 400);
             }
         }
 
+        if (strtotime($body['fecha_ingreso']) === false) {
+            return $this->json($response, ['success' => false, 'message' => 'Fecha de ingreso inválida'], 400);
+        }
+
         if (Empleado::where('documento', $body['documento'])->exists()) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'El documento ya existe'
-            ], 409);
+            return $this->json($response, ['success' => false, 'message' => 'El documento ya existe'], 409);
         }
 
         if (Empleado::where('correo', $body['correo'])->exists()) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'El correo ya existe'
-            ], 409);
+            return $this->json($response, ['success' => false, 'message' => 'El correo ya existe'], 409);
         }
 
-        $empleado = Empleado::create([
-            'nombres' => $body['nombres'],
-            'apellidos' => $body['apellidos'],
-            'documento' => $body['documento'],
-            'correo' => $body['correo'],
-            'telefono' => $body['telefono'],
-            'cargo' => $body['cargo'],
-            'area' => $body['area'],
+        $item = Empleado::create([
+            'nombres' => trim($body['nombres']),
+            'apellidos' => trim($body['apellidos']),
+            'documento' => trim($body['documento']),
+            'correo' => trim($body['correo']),
+            'telefono' => trim($body['telefono']),
+            'cargo' => trim($body['cargo']),
+            'area' => trim($body['area']),
             'fecha_ingreso' => $body['fecha_ingreso'],
             'estado' => $body['estado'] ?? 'activo'
         ]);
 
         return $this->json($response, [
             'success' => true,
-            'message' => 'Empleado creado correctamente',
-            'data' => $empleado
+            'message' => 'Empleado registrado correctamente',
+            'data' => $item
         ], 201);
     }
 
     public function update(Request $request, Response $response, array $args): Response
     {
-        $empleado = Empleado::find($args['id']);
+        $item = Empleado::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Empleado no encontrado'], 404);
 
-        if (!$empleado) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Empleado no encontrado'
-            ], 404);
+        $body = $this->body($request);
+
+        if (isset($body['documento']) && $body['documento'] !== $item->documento) {
+            if (Empleado::where('documento', $body['documento'])->where('id', '!=', $item->id)->exists()) {
+                return $this->json($response, ['success' => false, 'message' => 'El documento ya existe'], 409);
+            }
+            $item->documento = trim($body['documento']);
         }
 
-        $body = (array) $request->getParsedBody();
-
-        if (!empty($body['documento']) && Empleado::where('documento', $body['documento'])->where('id', '!=', $empleado->id)->exists()) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'El documento ya existe'
-            ], 409);
+        if (isset($body['correo']) && $body['correo'] !== $item->correo) {
+            if (Empleado::where('correo', $body['correo'])->where('id', '!=', $item->id)->exists()) {
+                return $this->json($response, ['success' => false, 'message' => 'El correo ya existe'], 409);
+            }
+            $item->correo = trim($body['correo']);
         }
 
-        if (!empty($body['correo']) && Empleado::where('correo', $body['correo'])->where('id', '!=', $empleado->id)->exists()) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'El correo ya existe'
-            ], 409);
+        if (isset($body['nombres'])) $item->nombres = trim($body['nombres']);
+        if (isset($body['apellidos'])) $item->apellidos = trim($body['apellidos']);
+        if (isset($body['telefono'])) $item->telefono = trim($body['telefono']);
+        if (isset($body['cargo'])) $item->cargo = trim($body['cargo']);
+        if (isset($body['area'])) $item->area = trim($body['area']);
+        if (isset($body['fecha_ingreso'])) {
+            if (strtotime($body['fecha_ingreso']) === false) {
+                return $this->json($response, ['success' => false, 'message' => 'Fecha de ingreso inválida'], 400);
+            }
+            $item->fecha_ingreso = $body['fecha_ingreso'];
         }
+        if (isset($body['estado'])) $item->estado = $body['estado'];
 
-        $empleado->update($body);
+        $item->save();
 
         return $this->json($response, [
             'success' => true,
             'message' => 'Empleado actualizado correctamente',
-            'data' => $empleado
+            'data' => $item
         ]);
     }
 
-    public function changeStatus(Request $request, Response $response, array $args): Response
+    public function changeState(Request $request, Response $response, array $args): Response
     {
-        $empleado = Empleado::find($args['id']);
+        $item = Empleado::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Empleado no encontrado'], 404);
 
-        if (!$empleado) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Empleado no encontrado'
-            ], 404);
+        $body = $this->body($request);
+        $estado = $body['estado'] ?? null;
+
+        if (!in_array($estado, ['activo', 'inactivo'], true)) {
+            return $this->json($response, ['success' => false, 'message' => 'Estado inválido'], 400);
         }
 
-        $body = (array) $request->getParsedBody();
-        $estado = $body['estado'] ?? '';
-
-        if (!in_array($estado, ['activo', 'inactivo'])) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Estado inválido'
-            ], 400);
-        }
-
-        $empleado->estado = $estado;
-        $empleado->save();
+        $item->estado = $estado;
+        $item->save();
 
         return $this->json($response, [
             'success' => true,
             'message' => 'Estado actualizado correctamente',
-            'data' => $empleado
+            'data' => $item
         ]);
+    }
+
+    public function destroy(Request $request, Response $response, array $args): Response
+    {
+        $item = Empleado::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Empleado no encontrado'], 404);
+
+        $item->delete();
+
+        return $this->json($response, ['success' => true, 'message' => 'Empleado eliminado correctamente']);
     }
 }

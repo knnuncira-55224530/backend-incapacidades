@@ -1,35 +1,47 @@
 <?php
+
 namespace App\Middleware;
 
 use App\Models\Usuario;
-use Psr\Http\Message\ServerRequestInterface as Request;
-use Psr\Http\Server\RequestHandlerInterface as RequestHandler;
-use Slim\Psr7\Response;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 
-class AuthMiddleware
+class AuthMiddleware implements MiddlewareInterface
 {
-    public function __invoke(Request $request, RequestHandler $handler)
+    private function json(ResponseInterface $response, array $data, int $status = 401): ResponseInterface
     {
-        $headers = $request->getHeaders();
-        $token = $headers['Authorization'][0] ?? '';
-        $token = str_replace('Bearer ', '', $token);
+        $response->getBody()->write(json_encode($data, JSON_UNESCAPED_UNICODE));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
+    }
 
-        $user = Usuario::where('token', $token)
-               ->where('sesion_activa', true)
-               ->where('estado', 'activo')
-               ->first();
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+    {
+        $auth = $request->getHeaderLine('Authorization');
+        $token = str_starts_with($auth, 'Bearer ') ? trim(substr($auth, 7)) : '';
 
-        if (!$user) {
-            $response = new Response();
-            $response->getBody()->write(json_encode([
+        if ($token === '') {
+            $response = new \Slim\Psr7\Response();
+            return $this->json($response, [
                 'success' => false,
-                'message' => 'No autorizado'
-            ]));
-            return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+                'message' => 'Token requerido'
+            ]);
         }
 
-        // Añadir usuario a la request para usarlo en controllers
-        $request = $request->withAttribute('usuario', $user);
+        $user = Usuario::where('token', $token)
+            ->where('session_active', 1)
+            ->first();
+
+        if (!$user) {
+            $response = new \Slim\Psr7\Response();
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Sesión no válida'
+            ]);
+        }
+
+        $request = $request->withAttribute('auth_user', $user);
         return $handler->handle($request);
     }
 }

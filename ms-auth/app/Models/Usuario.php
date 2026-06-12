@@ -20,6 +20,7 @@ class Usuario extends Model
     ];
 
     protected $hidden = [
-        'contrasena'
+        'contrasena',
+        'token'
     ];
 }

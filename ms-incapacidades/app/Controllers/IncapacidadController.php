@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Models\Incapacidad;
+use Illuminate\Support\Facades\DB;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -14,39 +15,41 @@ class IncapacidadController
         return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 
+    private function body(Request $request): array
+    {
+        $parsed = $request->getParsedBody();
+        return is_array($parsed) ? $parsed : [];
+    }
+
+    private function days(string $a, string $b): int
+    {
+        return date_diff(date_create($a), date_create($b))->days + 1;
+    }
+
     public function index(Request $request, Response $response): Response
     {
-        $query = Incapacidad::query();
-        $params = $request->getQueryParams();
+        $q = Incapacidad::query();
+        $p = $request->getQueryParams();
 
-        if (!empty($params['empleado_id'])) {
-            $query->where('empleado_id', $params['empleado_id']);
-        }
+        if (!empty($p['empleado_id'])) $q->where('empleado_id', $p['empleado_id']);
+        if (!empty($p['estado'])) $q->where('estado', $p['estado']);
+        if (!empty($p['tipo'])) $q->where('tipo', $p['tipo']);
+        if (!empty($p['fecha'])) $q->whereDate('fecha_inicio', '<=', $p['fecha'])->whereDate('fecha_fin', '>=', $p['fecha']);
 
-        if (!empty($params['estado'])) {
-            $query->where('estado', $params['estado']);
-        }
+        return $this->json($response, ['success' => true, 'data' => $q->orderBy('id', 'desc')->get()]);
+    }
 
-        if (!empty($params['tipo'])) {
-            $query->where('tipo', $params['tipo']);
-        }
-
-        if (!empty($params['fecha'])) {
-            $query->whereDate('fecha_inicio', '<=', $params['fecha'])
-                  ->whereDate('fecha_fin', '>=', $params['fecha']);
-        }
-
-        $incapacidades = $query->orderBy('id', 'desc')->get();
-
-        return $this->json($response, [
-            'success' => true,
-            'data' => $incapacidades
-        ]);
+    public function show(Request $request, Response $response, array $args): Response
+    {
+        $item = Incapacidad::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Incapacidad no encontrada'], 404);
+        return $this->json($response, ['success' => true, 'data' => $item]);
     }
 
     public function store(Request $request, Response $response): Response
     {
-        $body = (array) $request->getParsedBody();
+        $body = $request->getParsedBody();
+        $body = is_array($body) ? $body : [];
 
         $required = [
             'empleado_id',
@@ -58,7 +61,7 @@ class IncapacidadController
         ];
 
         foreach ($required as $campo) {
-            if (empty($body[$campo])) {
+            if (!isset($body[$campo]) || trim((string)$body[$campo]) === '') {
                 return $this->json($response, [
                     'success' => false,
                     'message' => "El campo {$campo} es obligatorio"
@@ -66,16 +69,37 @@ class IncapacidadController
             }
         }
 
-        if (strtotime($body['fecha_fin']) < strtotime($body['fecha_inicio'])) {
+        $permitidos = [
+            'enfermedad_general',
+            'accidente_laboral',
+            'licencia_medica',
+            'incapacidad_temporal'
+        ];
+
+        if (!in_array($body['tipo'], $permitidos, true)) {
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Tipo de incapacidad inválido'
+            ], 400);
+        }
+
+        $fechaInicio = $body['fecha_inicio'];
+        $fechaFin = $body['fecha_fin'];
+
+        if (strtotime($fechaFin) < strtotime($fechaInicio)) {
             return $this->json($response, [
                 'success' => false,
                 'message' => 'La fecha fin no puede ser menor a la fecha inicio'
             ], 400);
         }
 
-        $duplicada = Incapacidad::where('empleado_id', $body['empleado_id'])
-            ->where('fecha_inicio', $body['fecha_inicio'])
-            ->where('fecha_fin', $body['fecha_fin'])
+        $empleadoId = (int) $body['empleado_id'];
+
+        $dias = date_diff(date_create($fechaInicio), date_create($fechaFin))->days + 1;
+
+        $duplicada = Incapacidad::where('empleado_id', $empleadoId)
+            ->where('fecha_inicio', $fechaInicio)
+            ->where('fecha_fin', $fechaFin)
             ->exists();
 
         if ($duplicada) {
@@ -85,84 +109,67 @@ class IncapacidadController
             ], 409);
         }
 
-        $dias = date_diff(
-            date_create($body['fecha_inicio']),
-            date_create($body['fecha_fin'])
-        )->days + 1;
-
-        $incapacidad = Incapacidad::create([
-            'empleado_id' => $body['empleado_id'],
-            'fecha_inicio' => $body['fecha_inicio'],
-            'fecha_fin' => $body['fecha_fin'],
-            'tipo' => $body['tipo'],
-            'diagnostico_general' => $body['diagnostico_general'],
-            'entidad_medica' => $body['entidad_medica'],
-            'observaciones' => $body['observaciones'] ?? null,
-            'dias_incapacidad' => $dias,
-            'estado' => $body['estado'] ?? 'registrada'
-        ]);
+        $item = new Incapacidad();
+        $item->empleado_id = $empleadoId;
+        $item->fecha_inicio = $fechaInicio;
+        $item->fecha_fin = $fechaFin;
+        $item->tipo = $body['tipo'];
+        $item->diagnostico_general = $body['diagnostico_general'];
+        $item->entidad_medica = $body['entidad_medica'];
+        $item->observaciones = $body['observaciones'] ?? null;
+        $item->dias_incapacidad = $dias;
+        $item->estado = $body['estado'] ?? 'registrada';
+        $item->save();
 
         return $this->json($response, [
             'success' => true,
             'message' => 'Incapacidad registrada correctamente',
-            'data' => $incapacidad
+            'data' => $item
         ], 201);
     }
 
     public function update(Request $request, Response $response, array $args): Response
     {
-        $incapacidad = Incapacidad::find($args['id']);
+        $item = Incapacidad::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Incapacidad no encontrada'], 404);
 
-        if (!$incapacidad) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Incapacidad no encontrada'
-            ], 404);
-        }
+        $body = $this->body($request);
 
-        $body = (array) $request->getParsedBody();
-
-        if (!empty($body['fecha_inicio']) && !empty($body['fecha_fin'])) {
+        if (isset($body['fecha_inicio']) && isset($body['fecha_fin'])) {
             if (strtotime($body['fecha_fin']) < strtotime($body['fecha_inicio'])) {
-                return $this->json($response, [
-                    'success' => false,
-                    'message' => 'La fecha fin no puede ser menor a la fecha inicio'
-                ], 400);
+                return $this->json($response, ['success' => false, 'message' => 'La fecha fin no puede ser menor a la fecha inicio'], 400);
             }
-
-            $body['dias_incapacidad'] = date_diff(
-                date_create($body['fecha_inicio']),
-                date_create($body['fecha_fin'])
-            )->days + 1;
+            $item->fecha_inicio = $body['fecha_inicio'];
+            $item->fecha_fin = $body['fecha_fin'];
+            $item->dias_incapacidad = $this->days($body['fecha_inicio'], $body['fecha_fin']);
         }
 
-        $incapacidad->update($body);
+        if (isset($body['observaciones'])) $item->observaciones = $body['observaciones'];
+        if (isset($body['estado'])) $item->estado = $body['estado'];
 
-        return $this->json($response, [
-            'success' => true,
-            'message' => 'Incapacidad actualizada correctamente',
-            'data' => $incapacidad
-        ]);
+        $item->save();
+
+        return $this->json($response, ['success' => true, 'message' => 'Incapacidad actualizada correctamente', 'data' => $item]);
     }
 
     public function finalize(Request $request, Response $response, array $args): Response
     {
-        $incapacidad = Incapacidad::find($args['id']);
+        $item = Incapacidad::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Incapacidad no encontrada'], 404);
 
-        if (!$incapacidad) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Incapacidad no encontrada'
-            ], 404);
-        }
+        $item->estado = 'finalizada';
+        $item->save();
 
-        $incapacidad->estado = 'finalizada';
-        $incapacidad->save();
+        return $this->json($response, ['success' => true, 'message' => 'Incapacidad finalizada correctamente', 'data' => $item]);
+    }
 
-        return $this->json($response, [
-            'success' => true,
-            'message' => 'Incapacidad finalizada correctamente',
-            'data' => $incapacidad
-        ]);
+    public function destroy(Request $request, Response $response, array $args): Response
+    {
+        $item = Incapacidad::find($args['id']);
+        if (!$item) return $this->json($response, ['success' => false, 'message' => 'Incapacidad no encontrada'], 404);
+
+        $item->delete();
+
+        return $this->json($response, ['success' => true, 'message' => 'Incapacidad eliminada correctamente']);
     }
 }

@@ -14,82 +14,101 @@ class AuthController
         return $response->withHeader('Content-Type', 'application/json')->withStatus($status);
     }
 
+    private function body(Request $request): array
+    {
+        $parsed = $request->getParsedBody();
+        return is_array($parsed) ? $parsed : [];
+    }
+
+    private function token(): string
+    {
+        return bin2hex(random_bytes(32));
+    }
+
     public function login(Request $request, Response $response): Response
     {
-        $body = (array) $request->getParsedBody();
+        $body = $this->body($request);
+        $credencial = trim((string)($body['usuario'] ?? $body['correo'] ?? ''));
+        $contrasena = (string)($body['contrasena'] ?? $body['password'] ?? '');
 
-        $login = trim($body['user'] ?? '');
-        $password = trim($body['password'] ?? '');
-
-        if ($login === '' || $password === '') {
+        if ($credencial === '' || $contrasena === '') {
             return $this->json($response, [
                 'success' => false,
-                'message' => 'Debes enviar usuario/correo y contraseña'
+                'message' => 'Usuario/correo y contraseña son obligatorios'
             ], 400);
         }
 
-        $usuario = Usuario::where('usuario', $login)
-            ->orWhere('correo', $login)
-            ->where('estado', 'activo')
+        $user = Usuario::where('usuario', $credencial)
+            ->orWhere('correo', $credencial)
             ->first();
 
-        if (!$usuario) {
+        if (!$user) {
             return $this->json($response, [
                 'success' => false,
-                'message' => 'Usuario no encontrado o inactivo'
-            ], 404);
-        }
-
-        if ($usuario->contrasena !== $password) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'Contraseña incorrecta'
+                'message' => 'Credenciales inválidas'
             ], 401);
         }
 
-        $token = bin2hex(random_bytes(32));
-        $usuario->token = $token;
-        $usuario->sesion_activa = true;
-        $usuario->save();
+        if ($user->estado !== 'activo') {
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Usuario inactivo'
+            ], 403);
+        }
+
+        $stored = (string) $user->contrasena;
+        $ok = password_get_info($stored)['algo'] ? password_verify($contrasena, $stored) : ($contrasena === $stored);
+
+        if (!$ok) {
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Credenciales inválidas'
+            ], 401);
+        }
+
+        $user->token = $this->token();
+        $user->sesion_activa = 1;
+        $user->save();
 
         return $this->json($response, [
             'success' => true,
             'message' => 'Inicio de sesión exitoso',
+            'token' => $user->token,
             'data' => [
-                'id' => $usuario->id,
-                'nombre' => $usuario->nombre,
-                'usuario' => $usuario->usuario,
-                'correo' => $usuario->correo,
-                'rol' => $usuario->rol,
-                'token' => $token
+                'id' => $user->id,
+                'nombre' => $user->nombre,
+                'correo' => $user->correo,
+                'usuario' => $user->usuario,
+                'rol' => $user->rol,
+                'estado' => $user->estado
             ]
         ]);
     }
 
     public function logout(Request $request, Response $response): Response
     {
-        $body = (array) $request->getParsedBody();
-        $token = trim($body['token'] ?? '');
+        $auth = $request->getHeaderLine('Authorization');
+        $token = str_starts_with($auth, 'Bearer ') ? trim(substr($auth, 7)) : '';
 
         if ($token === '') {
             return $this->json($response, [
                 'success' => false,
                 'message' => 'Token requerido'
-            ], 400);
+            ], 401);
         }
 
-        $usuario = Usuario::where('token', $token)->first();
+        $user = Usuario::where('token', $token)->first();
 
-        if (!$usuario) {
+        if (!$user) {
             return $this->json($response, [
                 'success' => false,
                 'message' => 'Token inválido'
-            ], 404);
+            ], 401);
         }
 
-        $usuario->token = null;
-        $usuario->sesion_activa = false;
-        $usuario->save();
+        $user->token = null;
+        $user->sesion_activa = 0;
+        $user->save();
 
         return $this->json($response, [
             'success' => true,
@@ -97,14 +116,10 @@ class AuthController
         ]);
     }
 
-    public function validateSession(Request $request, Response $response): Response
+    public function validate(Request $request, Response $response): Response
     {
-        $authHeader = $request->getHeaderLine('Authorization');
-        $token = '';
-
-        if (str_starts_with($authHeader, 'Bearer ')) {
-            $token = trim(substr($authHeader, 7));
-        }
+        $auth = $request->getHeaderLine('Authorization');
+        $token = str_starts_with($auth, 'Bearer ') ? trim(substr($auth, 7)) : '';
 
         if ($token === '') {
             return $this->json($response, [
@@ -113,12 +128,9 @@ class AuthController
             ], 401);
         }
 
-        $usuario = Usuario::where('token', $token)
-            ->where('sesion_activa', true)
-            ->where('estado', 'activo')
-            ->first();
+        $user = Usuario::where('token', $token)->where('sesion_activa', 1)->where('estado', 'activo')->first();
 
-        if (!$usuario) {
+        if (!$user) {
             return $this->json($response, [
                 'success' => false,
                 'message' => 'Sesión no válida'
@@ -129,10 +141,11 @@ class AuthController
             'success' => true,
             'message' => 'Sesión válida',
             'data' => [
-                'id' => $usuario->id,
-                'nombre' => $usuario->nombre,
-                'usuario' => $usuario->usuario,
-                'rol' => $usuario->rol
+                'id' => $user->id,
+                'nombre' => $user->nombre,
+                'correo' => $user->correo,
+                'usuario' => $user->usuario,
+                'rol' => $user->rol
             ]
         ]);
     }

@@ -23,6 +23,14 @@ class SeguimientoController
             $query->where('incapacidad_id', $params['incapacidad_id']);
         }
 
+        if (!empty($params['estado'])) {
+            $query->where('estado', $params['estado']);
+        }
+
+        if (!empty($params['fecha'])) {
+            $query->where('fecha', $params['fecha']);
+        }
+
         $seguimientos = $query->orderBy('id', 'desc')->get();
 
         return $this->json($response, [
@@ -35,16 +43,8 @@ class SeguimientoController
     {
         $body = (array) $request->getParsedBody();
 
-        $required = [
-            'incapacidad_id',
-            'fecha',
-            'comentario',
-            'estado',
-            'usuario_responsable'
-        ];
-
-        foreach ($required as $campo) {
-            if (empty($body[$campo])) {
+        foreach (['incapacidad_id', 'fecha', 'comentario', 'estado', 'usuario_responsable'] as $campo) {
+            if (!isset($body[$campo]) || trim((string) $body[$campo]) === '') {
                 return $this->json($response, [
                     'success' => false,
                     'message' => "El campo {$campo} es obligatorio"
@@ -52,22 +52,22 @@ class SeguimientoController
             }
         }
 
-        $seguimiento = Seguimiento::create([
-            'incapacidad_id' => $body['incapacidad_id'],
-            'fecha' => $body['fecha'],
-            'comentario' => $body['comentario'],
-            'estado' => $body['estado'],
-            'usuario_responsable' => $body['usuario_responsable']
-        ]);
+        $seguimiento = new Seguimiento();
+        $seguimiento->incapacidad_id = $body['incapacidad_id'];
+        $seguimiento->fecha = $body['fecha'];
+        $seguimiento->comentario = $body['comentario'];
+        $seguimiento->estado = $body['estado'];
+        $seguimiento->usuario_responsable = $body['usuario_responsable'];
+        $seguimiento->save();
 
         return $this->json($response, [
             'success' => true,
-            'message' => 'Seguimiento registrado correctamente',
+            'message' => 'Seguimiento guardado correctamente',
             'data' => $seguimiento
         ], 201);
     }
 
-    public function updateStatus(Request $request, Response $response, array $args): Response
+    public function update(Request $request, Response $response, array $args): Response
     {
         $seguimiento = Seguimiento::find($args['id']);
 
@@ -79,22 +79,38 @@ class SeguimientoController
         }
 
         $body = (array) $request->getParsedBody();
-        $estado = $body['estado'] ?? '';
 
-        if (empty($estado)) {
-            return $this->json($response, [
-                'success' => false,
-                'message' => 'El campo estado es obligatorio'
-            ], 400);
-        }
+        if (isset($body['incapacidad_id'])) $seguimiento->incapacidad_id = $body['incapacidad_id'];
+        if (isset($body['fecha'])) $seguimiento->fecha = $body['fecha'];
+        if (isset($body['comentario'])) $seguimiento->comentario = $body['comentario'];
+        if (isset($body['estado'])) $seguimiento->estado = $body['estado'];
+        if (isset($body['usuario_responsable'])) $seguimiento->usuario_responsable = $body['usuario_responsable'];
 
-        $seguimiento->estado = $estado;
         $seguimiento->save();
 
         return $this->json($response, [
             'success' => true,
-            'message' => 'Estado actualizado correctamente',
+            'message' => 'Seguimiento actualizado correctamente',
             'data' => $seguimiento
+        ]);
+    }
+
+    public function destroy(Request $request, Response $response, array $args): Response
+    {
+        $seguimiento = Seguimiento::find($args['id']);
+
+        if (!$seguimiento) {
+            return $this->json($response, [
+                'success' => false,
+                'message' => 'Seguimiento no encontrado'
+            ], 404);
+        }
+
+        $seguimiento->delete();
+
+        return $this->json($response, [
+            'success' => true,
+            'message' => 'Seguimiento eliminado correctamente'
         ]);
     }
 }

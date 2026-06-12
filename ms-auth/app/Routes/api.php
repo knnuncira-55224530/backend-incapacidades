@@ -4,8 +4,9 @@ use Slim\App;
 use App\Controllers\AuthController;
 
 return function (App $app) {
-    $auth = new AuthController();
-    $app->post('/login', [$auth, 'login']);
-    $app->post('/logout', [$auth, 'logout']);
-    $app->get('/validate-session', [$auth, 'validateSession']);
+    $c = new AuthController();
+
+    $app->post('/login', [$c, 'login']);
+    $app->post('/logout', [$c, 'logout']);
+    $app->get('/validate', [$c, 'validate']);
 };

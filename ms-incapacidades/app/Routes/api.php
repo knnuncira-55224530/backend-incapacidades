@@ -4,10 +4,16 @@ use Slim\App;
 use App\Controllers\IncapacidadController;
 
 return function (App $app) {
-    $controller = new IncapacidadController();
+    $c = new IncapacidadController();
 
-    $app->get('/incapacidades', [$controller, 'index']);
-    $app->post('/incapacidades', [$controller, 'store']);
-    $app->put('/incapacidades/{id}', [$controller, 'update']);
-    $app->patch('/incapacidades/{id}/finalizar', [$controller, 'finalize']);
+    $app->options('/{routes:.+}', function ($request, $response) {
+        return $response;
+    });
+
+    $app->get('/incapacidades', [$c, 'index']);
+    $app->get('/incapacidades/{id}', [$c, 'show']);
+    $app->post('/incapacidades', [$c, 'store']);
+    $app->put('/incapacidades/{id}', [$c, 'update']);
+    $app->patch('/incapacidades/{id}/finalizar', [$c, 'finalize']);
+    $app->delete('/incapacidades/{id}', [$c, 'destroy']);
 };

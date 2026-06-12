@@ -8,5 +8,6 @@ return function (App $app) {
 
     $app->get('/seguimientos', [$controller, 'index']);
     $app->post('/seguimientos', [$controller, 'store']);
-    $app->patch('/seguimientos/{id}/estado', [$controller, 'updateStatus']);
+    $app->put('/seguimientos/{id}', [$controller, 'update']);
+    $app->delete('/seguimientos/{id}', [$controller, 'destroy']);
 };
